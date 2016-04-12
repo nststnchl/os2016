@@ -1,173 +1,175 @@
-#define _XOPEN_SOURCE 500
-#define _POSIX_SOURCE
 #include <unistd.h>
-#include <netdb.h>
-#include <sys/epoll.h>
 #include <vector>
-#include <string.h>
-#include <cstdio>
-#include <errno.h>
-#include <wait.h>
-#include <cstdlib>
-#include <fcntl.h>
 #include <string>
-#include <iostream>
+#include <fcntl.h>
+#include <cstring>
+#include <signal.h>
+#include <wait.h>
 
 using namespace std;
 
-int spawn(const char* file, char* const argv[])
-{
-    pid_t process_id = fork();
-
-    if (process_id == -1)
-    {
-        fprintf(stderr, "%s\n", strerror(errno));
-        return -1;
-    }
-
-    if (process_id != 0)
-    {
-        int status;
-        waitpid(process_id, &status, 0);
-
-        if (!WIFEXITED(status))
-        {
-            fprintf(stderr, "%s\n", strerror(errno));
-            return -1;
+struct call_my {
+    string name;
+    vector<string> args;
+    call_my(char* s, vector<char*> mas) {
+        name = s;
+        for (int i = 0; i < mas.size(); i++) {
+            args.push_back(mas[i]);
         }
-
-        return WEXITSTATUS(status);
     }
-
-    int result = execvp(file, argv);
-
-    if (result == -1)
-    {
-        fprintf(stderr, "%s\n", strerror(errno));
-        return -1;
-    }
-
-    return -1; //Never reaches
-}
-
-pid_t new_spawn(const char* file, char* const argv[])
-{
-    pid_t process_id = fork();
-
-    if (process_id == -1)
-    {
-        fprintf(stderr, "%s\n", strerror(errno));
-        return -1;
-    }
-
-    if (process_id != 0)
-    {
-        int status;
-        waitpid(process_id, &status, 0);
-
-        if (!WIFEXITED(status))
-        {
-            fprintf(stderr, "%s\n", strerror(errno));
-            return -1;
+    call_my(string s, vector<char*> mas) {
+        name = (char*) s.data();
+        for (int i = 0; i < mas.size(); i++) {
+            args.push_back(mas[i]);
         }
-
-        return process_id;
     }
-
-    int result = execvp(file, argv);
-    return process_id;
-
-    if (result == -1)
-    {
-        fprintf(stderr, "%s\n", strerror(errno));
-        return -1;
+    call_my(string s, vector<string> mas) {
+        name = s;
+        args = mas;
     }
-
-    return -1; //Never reaches
-}
-
-struct execargs_t
-{
-    char* program;
-    char** args;
-    int count;
+    call_my(string s) {
+        name = (char*) s.data();
+    }
+    call_my() {
+    }
+    call_my(char* s) {
+        name = s;
+    }
 };
 
-struct execargs_t *exec_new(char* _program, char** _args, int _count)
-{
-    char* tmp = (char*) malloc(4096);
-
-    if (tmp == NULL)
-        return NULL;
-
-    int len = -1;
-
-    do
-    {
-        len++;
-        tmp[len] = _program[len];
-    } while (_program[len] != '\0');
-
-    char** tmp_args = (char**) malloc(sizeof(char*) * (_count + 1));
-
-    for (int i = 0; i <= _count; i++)
-        tmp_args[i] = (char*) malloc(4096);
-
-    if (tmp_args == NULL)
-    {
-        free(tmp);
-        return NULL;
+vector <call_my> programs;
+/*
+struct rest {
+    char* text;
+    ssize_t length;
+    rest(char* s, ssize_t l) {
+        text = s;
+        length = l;
     }
-
-    for (int i = 0; i < _count; i++)
-    {
-        len = -1;
-
-        do {
-            len++;
-            tmp_args[i][len] = _args[i][len];
-        } while (_args[i][len] != '\0');
+    rest() {
+        length = -1;
     }
+};
 
-    tmp_args[_count] = NULL;
-    execargs_t* res = (execargs_t*) malloc(sizeof(execargs_t));
+rest other;
+*/
 
-    if (res == NULL)
-    {
-        free(tmp);
-        free(tmp_args);
-        return NULL;
+/*
+char** to_char(vector<string> vs) {
+    char* ans[vs.size()];
+    for (int i = 0; i < vs.size(); i++) {
+        ans[i] = (char*) vs[i].data();
     }
-
-    res -> program = tmp;
-    res -> args = tmp_args;
-    res -> count = _count;
-
-    return res;
+    return ans;
 }
 
-void exec_free(struct execargs_t* exec)
+char* to_char(string s) {
+    return  (char*) s.data();
+}
+*/
+
+ssize_t read_until(int fd, char* buf, size_t count)
 {
-    if (exec != NULL)
-        free(exec);
+    ssize_t have = 0;
+    int res = 0;
+    int in_quotes1 = 0;
+    int in_quotes2 = 0;
+
+    while (1)
+    {
+        have = read(fd, buf + res, count);
+
+        for (int i = 0; i < have; i++) {
+            if (buf [res + i] == 34) // "
+                in_quotes1 = (in_quotes1 + 1) % 2;
+
+            if (buf [res + i] == 39) // '
+                in_quotes2 = (in_quotes2 + 1) % 2;
+
+            if (buf[res + i] == '\n' && in_quotes1 == 0 && in_quotes2 == 0) {
+                //other = rest(buf + i + 1 + res, count - i - 1);
+                return res + i;
+            }
+        }
+
+        if (have == 0)
+            return res;
+        else if (have == -1)
+            return -1;
+        else if (have == count)
+            return have + res;
+
+        res += have;
+        count -= have;
+    }
 }
 
-int exec(execargs_t* args)
-{
-    int process_id = new_spawn(args -> program, args -> args);
-    if (process_id < 0)
-    {
-        fprintf(stderr, "%s\n", strerror(errno));
-        return -1;
+void add_arg(string s) {
+    call_my curr_call;
+    curr_call = programs[programs.size() - 1];
+    curr_call.args.push_back(s.data());
+    programs[programs.size() - 1] = curr_call;
+}
+
+void parse(char* text1, int len) {
+    string text = text1;
+    int found_program = 0;
+    programs.clear();
+    int last = 0;
+    int in_quotes = 0;
+
+    for (int i = 0; i < len; i++) {
+        if (!in_quotes && text[i] == ' ' && last - i == 0) {
+            last = i + 1;  //случай нескольких пробелов
+        }
+        if (!in_quotes && text[i] == 39 && text[i - 1] == ' ') {
+            in_quotes = 1;
+            last = i + 1;
+        } else if (in_quotes == 1 && text[i] == 39 && (i == len - 1 || text[i + 1] == ' ' || text[i + 1] == '|')) {
+            in_quotes = 0;
+            add_arg(text.substr((unsigned) last, (unsigned) i - last));
+            last = i + 1;
+        } else if (!in_quotes && i - last > 0) {
+            if (text[i] == '|') {
+                programs.push_back(call_my(text.substr((unsigned) last, (unsigned) i - last)));
+                if (found_program == 0) {
+                    add_arg(text.substr((unsigned) last, (unsigned) i - last));
+                }
+                found_program = 0;
+                last = i + 1;
+            }
+            if (text[i] == ' ') {
+                if (!found_program) {
+                    programs.push_back(call_my(text.substr((unsigned) last, (unsigned) i - last)));
+                    add_arg(text.substr((unsigned) last, (unsigned) i - last));
+                    found_program = 1;
+                } else {
+                    add_arg(text.substr((unsigned) last, (unsigned) i - last));
+                }
+                last = i + 1;
+            }
+        } else {
+            if (!in_quotes && text[i] == '|') {
+                found_program = 0;
+                last = i + 1;
+            }
+        }
     }
 
-    return process_id;
+    if (len - last > 0) {
+        if (found_program) {
+            add_arg(text.substr((unsigned) last, (unsigned) len - last));
+        } else {
+            programs.push_back(call_my(text.substr((unsigned) last, (unsigned) len - last)));
+            add_arg(text.substr((unsigned) last, (unsigned) len - last));
+        }
+    }
 }
 
 int* pids_global;
-int pids_count;
+size_t pids_count;
 
-void action(int sig)
+void action(int)
 {
     for (int i = 0; i < pids_count; i++)
         kill(pids_global[i], SIGKILL);
@@ -175,7 +177,7 @@ void action(int sig)
     pids_count = 0;
 }
 
-int runpiped(execargs_t** programs, size_t n)
+int runpiped(call_my** programs, size_t n)
 {
     if (n == 0)
         return 0;
@@ -210,7 +212,13 @@ int runpiped(execargs_t** programs, size_t n)
         if (i < n - 1)
             dup2(pipes[i][1], STDOUT_FILENO);
 
-        int res = execvp(programs[i] -> program, programs[i] -> args);
+        char* arg_[programs[i] -> args.size() + 1];
+        for (int j = 0; j < programs[i]->args.size(); j++) {
+            arg_[j] = (char*) programs[i]->args[j].data();
+        }
+        arg_[programs[i] -> args.size()] = NULL;
+
+        int res = execvp(programs[i] -> name.data(), arg_);
 
         if (res == -1)
         {
@@ -245,93 +253,35 @@ int runpiped(execargs_t** programs, size_t n)
     return 0;
 }
 
-typedef struct addrinfo addrinfo;
-typedef struct sockaddr sockaddr;
-typedef struct epoll_event epoll_event;
-
-vector <execargs_t*> programs;
-
-void parse(char* command, int len) {
-    vector <char*> args;
-    char* arg = (char*) malloc(len);
-    char* program = (char*) malloc(len);
-    int i = -1;
-    int curr = 0;
-    char found_program = 0;
-    bool is_quote = 0;
-    args.clear();
-    programs.clear();
-
-    while (command[++i] == ' ') {}
-
-    for (; i < len; i++) {
-        if (command[i] == '\0') {
-            args.clear();
-            programs.clear();
-            return;
-        } else if ((command[i] == ' ' && !is_quote) || command[i] == '\n') {
-            if (curr == 0) {
-                break;
-            }
-
-            if (!found_program) {
-                program[curr] = '\0';
-                found_program = 1;
-            }
-
-            arg[curr] = '\0';
-            char* tmp = (char*) malloc(len);
-            strcpy(tmp, arg);
-            args.push_back(tmp);
-            curr = 0;
-
-            if (command[i] == '\n') {
-                break;
-            }
-
-            while (command[++i] == ' ') {}
-
-            i--;
-        } else if (command[i] == '|') {
-            if (!found_program) {
-                program[curr] = '\0';
-            }
-
-            if (curr != 0) {
-                arg[curr] = '\0';
-                char* tmp = (char*) malloc(len);
-                strcpy(tmp, arg);
-                args.push_back(tmp);
-                curr = 0;
-            }
-
-            while (command[++i] == ' ') {}
-
-            i--;
-            found_program = 0;
-            programs.push_back(exec_new(program, args.data(), (int) args.size()));
-            args.clear();
-        } else {
-            if (command[i] == '\'' || command[i] == '\"') {
-                is_quote = !is_quote;
-                continue;
-            }
-
-            if (!found_program) {
-                program[curr] = command[i];
-            }
-
-            arg[curr++] = command[i];
-        }
-    }
-
-    programs.push_back(exec_new(program, args.data(), (int) args.size()));
-}
-
 int main(int argc, char** argv) {
-    char* s = (char *) "cat a.txt";
-    parse(s, 9);
 
-    runpiped(programs.data(), 1);
+    char *buff;
+
+    while(true) {
+
+        write(STDOUT_FILENO, "$", 1);
+        write(STDOUT_FILENO, " ", 1);
+
+        if (errno != 0) {
+            break;
+        }
+
+        ssize_t have_read = read_until(STDIN_FILENO, buff, 4096);
+
+        parse(buff, (int) have_read);
+
+        size_t size = 0;
+        for (auto i = programs.begin(); i != programs.end(); i++) {
+            size++;
+        }
+
+        call_my* pr[size];
+        call_my mas[size];
+        for (int i = 0; i < size; i++) {
+            mas[i] = call_my(programs[i].name, programs[i].args);
+            pr[i] = &(mas[i]);
+        }
+        runpiped(pr, size);
+    }
     return 0;
 }
