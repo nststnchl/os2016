@@ -60,7 +60,7 @@ ssize_t read_until(int fd, char* buf, size_t count)
                 in_quotes2 = (in_quotes2 + 1) % 2;
 
             if (buf[res + i] == '\n' && in_quotes1 == 0 && in_quotes2 == 0) {
-                return res + i;
+                return res + i + 1;
             }
         }
 
@@ -89,6 +89,10 @@ void parse(char* text1, int len) {
     programs.clear();
     int last = 0;
     int in_quotes = 0;
+
+    if (text.substr(0, 4) == "exit") {
+        exit(0);
+    }
 
     for (int i = 0; i < len; i++) {
         if (!in_quotes && text[i] == ' ' && last - i == 0) {
@@ -260,7 +264,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        parse(buff, (int) have_read);
+        parse(buff, (int) have_read - 1);
 
         int size = programs.size();
 
