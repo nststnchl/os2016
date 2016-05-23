@@ -60,7 +60,6 @@ ssize_t read_until(int fd, char* buf, size_t count)
                 in_quotes2 = (in_quotes2 + 1) % 2;
 
             if (buf[res + i] == '\n' && in_quotes1 == 0 && in_quotes2 == 0) {
-                //other = rest(buf + i + 1 + res, count - i - 1);
                 return res + i;
             }
         }
